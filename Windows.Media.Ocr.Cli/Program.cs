@@ -10,9 +10,15 @@
 //*********************************************************
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Forms;
 using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.Storage.Streams;
@@ -23,12 +29,12 @@ namespace Windows.Media.Ocr.Cli
     {
         static void Main(string[] args)
         {
-#if DEBUG
-            args = new string[] { "..\\..\\x.png" };
-#endif
+            Console.OutputEncoding=Encoding.UTF8;
             string imagePath = null;
             string language = "zh-Hans-CN";
             string outputPath = "";
+            bool enableJsonOutput = false;
+            bool outputToClipboard= false;
             for (var i = 0; i < args.Length; i++)
             {
                 var arg = args[i];
@@ -58,23 +64,47 @@ namespace Windows.Media.Ocr.Cli
                     i++;
                     continue;
                 }
+                if (arg == "-j" || arg == "--json")
+                {
+                    enableJsonOutput = true;
+                    i++;
+                    continue;
+                }
+                if (arg == "-oc" || arg == "--output-to-clipboard")
+                {
+                    outputToClipboard = true;
+                    i++;
+                    continue;
+                }
                 imagePath = arg;
 
-                try
+               
+            }
+
+            try
+            {
+                var result = RecognizeAsync(imagePath, language).GetAwaiter().GetResult();
+                var options = new JsonSerializerOptions
                 {
-                    var result = RecognizeAsync(imagePath, language).GetAwaiter().GetResult();
-                    if (outputPath != "")
-                    {
-                        WriteTextToFile(result, outputPath);
-                    }
-                    Console.WriteLine(result);
-                }
-                catch (Exception e)
+                    WriteIndented = true,                                        // 美化输出
+                    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,       // 中文不转 \uXXXX
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                };
+                string json = JsonSerializer.Serialize(result, options);
+
+                var text = enableJsonOutput ? json : result.PrettyText;
+                if (outputPath != "")
                 {
-                    Console.WriteLine("ERROR: " + e.Message);
+                    WriteTextToFile(text, outputPath);
                 }
+                Console.WriteLine(text);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("ERROR: " + e.Message);
             }
 #if DEBUG
+            Console.WriteLine("Press Any Key to Continue...");
             Console.ReadLine();
 #endif
         }
@@ -90,7 +120,7 @@ Example: Windows.Media.Ocr.Cli.exe -o c:\res.txt x.png
 ");
         }
 
-        static async Task<string> RecognizeAsync(string imagePath, string language)
+        static async Task<OCRJson> RecognizeAsync(string imagePath, string language)
         {
             StorageFile storageFile;
             var path = Path.GetFullPath(imagePath); // x.png
@@ -102,21 +132,44 @@ Example: Windows.Media.Ocr.Cli.exe -o c:\res.txt x.png
             SoftwareBitmap softwareBitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
             Globalization.Language lang = new Globalization.Language(language);
             string space = language.Contains("zh") ? "" : " ";
-            string result = null;
+            OCRJson result = new OCRJson();
+            List<Line> lines=new List<Line>();
             if (OcrEngine.IsLanguageSupported(lang))
             {
                 OcrEngine engine = OcrEngine.TryCreateFromLanguage(lang);
                 if (engine != null)
                 {
                     OcrResult ocrResult = await engine.RecognizeAsync(softwareBitmap);
+                    result.TextAngle = ocrResult.TextAngle;
+                    result.Text = ocrResult.Text;
+                 
                     foreach (var tempLine in ocrResult.Lines)
                     {
                         string line = "";
-                        foreach (var word in tempLine.Words)
+                        double left = double.MaxValue;
+                        double top = double.MaxValue;
+                        double right = double.MinValue;
+                        double bottom = double.MinValue;
+
+                        foreach (OcrWord word in tempLine.Words)
                         {
                             line += word.Text + space;
+
+                            var r = word.BoundingRect;
+                            left = Math.Min(left, r.X);
+                            top = Math.Min(top, r.Y);
+                            right = Math.Max(right, r.X + r.Width);
+                            bottom = Math.Max(bottom, r.Y + r.Height);
                         }
-                        result += line + Environment.NewLine;
+                        Rect rect = new Rect(0, 0, 0, 0);
+                        if (tempLine.Words.Count > 0)   // 防御：空行时 left/top 还是 MaxValue，不能直接用
+                        {
+                            rect = new Rect(left, top, right - left, bottom - top);
+             
+                        }
+
+                        lines.Add(new Line(line,rect));
+                        result.PrettyText += line + Environment.NewLine;
                     }
                 }
             }
@@ -126,10 +179,13 @@ Example: Windows.Media.Ocr.Cli.exe -o c:\res.txt x.png
             };
             randomAccessStream.Dispose();
             softwareBitmap.Dispose();
-            return await Task<string>.Run(() =>
-            {
-                return result;
-            });
+            result.Lines = lines.ToArray();
+            return result;
+            //return await Task<string>.Run(() =>
+            //{
+            //    return result;
+            //});
+            
         }
         static void WriteTextToFile(string text, string filePath)
         {
@@ -142,6 +198,10 @@ Example: Windows.Media.Ocr.Cli.exe -o c:\res.txt x.png
                     writer.Write(text);
                 }
             }
+        }
+        static void WriteTextToClipboard(string text)
+        {
+            Clipboard.SetText(text);
         }
     }
 }

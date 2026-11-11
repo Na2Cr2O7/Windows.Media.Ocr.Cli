@@ -10,7 +10,6 @@
 //*********************************************************
 
 using System;
-using System.Windows;
 
 namespace Windows.Media.Ocr.Cli
 {
@@ -35,18 +34,14 @@ namespace Windows.Media.Ocr.Cli
             Height = height;
         }
 
-        public Line(string text, Rect rect)
+        // 坐标统一用 double，避免 Windows.Foundation.Rect / System.Windows.Rect 混用（.NET 10 下已无 WPF Rect）
+        public Line(string text, double x, double y, double width, double height, Word[] words)
         {
             Text = text;
-            X = rect.X;
-            Y = rect.Y;
-            Width = rect.Width;
-            Height = rect.Height;
-        }
-
-        public Line(string text, Rect rect, Word[] words)
-            : this(text, rect)
-        {
+            X = x;
+            Y = y;
+            Width = width;
+            Height = height;
             Words = words ?? Array.Empty<Word>();
         }
 

@@ -45,7 +45,8 @@ Example: Windows.Media.Ocr.Cli.exe -c -n
 ```
 
 ### 运行依赖
-1. 需要 Windows 10 /11 系统，其他平台没有测试，理论上可以支持所有支持 UWP 的设备，包括 Xbox 甚至安装 Windows 10 IoT 的树莓派，不太了解 Xamarin 能不能引入 UWP 的 runtime，如果能引入 UWP 就可以用在 iOS 和 Android 平台。
+1. 需要 Windows 10 (17763+) / 11 系统。项目已迁移到 **.NET 10**（`net10.0-windows10.0.19041.0`），运行机器需要安装 [.NET Desktop Runtime 10.0](https://dotnet.microsoft.com/download/dotnet/10.0)；发布时可用 `dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=true` 打成自带运行时的单文件 exe。
+2. WinRT API（Windows.Media.Ocr 等）通过 CsWinRT 投影（Microsoft.Windows.SDK.NET.Ref）调用，不再需要 UwpDesktop NuGet 包与手工引用 winmd。
 
 ## 功能
 - [x] 文字识别

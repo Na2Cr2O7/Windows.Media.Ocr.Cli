@@ -19,7 +19,6 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading.Tasks;
-using System.Windows;
 using System.Windows.Forms;
 using Windows.Media.Ocr;
 
@@ -148,26 +147,6 @@ namespace Windows.Media.Ocr.Cli
                 {
                     imagePath = arg;
                 }
-
-                if (outputPath != "")
-                {
-                    WriteTextToFile(result, outputPath);
-                }
-                Console.WriteLine(hasRecognizedText ? result : "未识别到文字。");
-
-                if (enableNotification)
-                {
-                    ShowNotification("OCR 完成", BuildNotificationText(result, useClipboard, hasRecognizedText), ToolTipIcon.Info, notificationDurationMs);
-                }
-            }
-            catch (Exception e)
-            {
-                if (enableNotification)
-                {
-                    ShowNotification("OCR 失败", e.Message, ToolTipIcon.Error, notificationDurationMs);
-                }
-                var errorMessage = e.InnerException == null ? e.Message : e.Message + " " + e.InnerException.Message;
-                Console.WriteLine("ERROR: " + errorMessage);
             }
 
             string clipboardTempFile = null;
@@ -370,11 +349,9 @@ Example: Windows.Media.Ocr.Cli.exe -c -n
                     }
 
                     // 空行时 left/top 还是 MaxValue，不能直接用
-                    var rect = words.Count > 0
-                        ? new Rect(left, top, right - left, bottom - top)
-                        : new Rect(0, 0, 0, 0);
-
-                    var line = new Line(builder.ToString(), rect, words.ToArray());
+                    var line = words.Count > 0
+                        ? new Line(builder.ToString(), left, top, right - left, bottom - top, words.ToArray())
+                        : new Line(builder.ToString(), 0, 0, 0, 0, words.ToArray());
                     lines.Add(line);
                     result.PrettyText += line.Text + Environment.NewLine;
                 }

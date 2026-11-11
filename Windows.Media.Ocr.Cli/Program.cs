@@ -34,7 +34,7 @@ namespace Windows.Media.Ocr.Cli
                 var arg = args[i];
                 if (arg == "-s")
                 {
-                    Console.WriteLine("All of supported language");
+                    Console.WriteLine("Supported languages");
                     foreach (var lang in OcrEngine.AvailableRecognizerLanguages)
                     {
                         Console.WriteLine(lang.LanguageTag);

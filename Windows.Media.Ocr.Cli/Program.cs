@@ -15,7 +15,7 @@ using System.IO;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Forms;
@@ -29,12 +29,12 @@ namespace Windows.Media.Ocr.Cli
     {
         static void Main(string[] args)
         {
-            Console.OutputEncoding=Encoding.UTF8;
+            Console.OutputEncoding = Encoding.UTF8;
             string imagePath = null;
             string language = "zh-Hans-CN";
             string outputPath = "";
             bool enableJsonOutput = false;
-            bool outputToClipboard= false;
+            bool outputToClipboard = false;
             for (var i = 0; i < args.Length; i++)
             {
                 var arg = args[i];
@@ -47,6 +47,12 @@ namespace Windows.Media.Ocr.Cli
                     }
                     break;
                 }
+                if (arg == "-oc" || arg == "--output-to-clipboard")
+                {
+                    outputToClipboard = true;
+                    continue;
+                }
+
                 if (arg == "-h" || arg == "--help")
                 {
                     PrintHelp();
@@ -67,18 +73,21 @@ namespace Windows.Media.Ocr.Cli
                 if (arg == "-j" || arg == "--json")
                 {
                     enableJsonOutput = true;
-                    i++;
-                    continue;
-                }
-                if (arg == "-oc" || arg == "--output-to-clipboard")
-                {
-                    outputToClipboard = true;
-                    i++;
-                    continue;
-                }
-                imagePath = arg;
 
-               
+                    continue;
+                }
+
+
+                if (arg == "-c" || arg == "--clipboard")
+                {
+                    imagePath = "!Clipboard!";
+                }
+                if (imagePath == null)
+                {
+                    imagePath = arg;
+                }
+
+
             }
 
             try
@@ -97,6 +106,10 @@ namespace Windows.Media.Ocr.Cli
                 {
                     WriteTextToFile(text, outputPath);
                 }
+                if (outputToClipboard)
+                {
+                    WriteTextToClipboard(text);
+                }
                 Console.WriteLine(text);
             }
             catch (Exception e)
@@ -113,27 +126,57 @@ namespace Windows.Media.Ocr.Cli
         {
             Console.WriteLine(@"Usage: Windows.Media.Ocr.Cli.exe [options...] <image file path>
 Example: Windows.Media.Ocr.Cli.exe -o c:\res.txt x.png
--l      <language>  Default:zh-Hans-CN   Specify language to reconizing
--o      <output_path> Output the resalut to a file, It should end with a file name, such as res.txt.
--s      Show all supported languages
--h      Show help like this
+-l      <language>              Default:zh-Hans-CN   Specify language to reconize
+-o      --output                <output_path> Output the resalut to a file, It should end with a file name, such as res.txt.
+-s                              Show all supported languages
+-h      --help                  Show help like this
+-oc     --output-to-clipboard   Save output to clipboard
+-j      --json                  Output as json
+-c      --clipboard             Input from clipboard (unusable)
 ");
         }
 
         static async Task<OCRJson> RecognizeAsync(string imagePath, string language)
         {
+            SoftwareBitmap softwareBitmap = new SoftwareBitmap(BitmapPixelFormat.Rgba16, 1, 1);
+            if (imagePath == "!Clipboard!")
+            {
+                var data = Clipboard.GetDataObject() ?? throw new Exception("Clipboard has no data.");
+                if (data.GetDataPresent(DataFormats.MetafilePict))
+                {
+                    var img = Clipboard.GetImage();
+                    img.Save("temp.jpg");
+                    imagePath = "temp.jpg";
+                }
+                else if (data.GetDataPresent(DataFormats.Text))
+                {
+                    imagePath = Clipboard.GetText();
+                }
+                else if (data.GetDataPresent(DataFormats.FileDrop))
+                {
+                    var files = Clipboard.GetFileDropList();
+                    if (files.Count == 0)
+                    {
+                        throw new Exception("No Files Found");
+                    }
+                    imagePath = files[0];
+                }
+            }
             StorageFile storageFile;
             var path = Path.GetFullPath(imagePath); // x.png
             var extName = Path.GetExtension(path); // .png
-            var outPath = path.Replace(extName, "") + "-out" + extName;  // x-out.png
+                                                   //var outPath = path.Replace(extName, "") + "-out" + extName;  // x-out.png
             storageFile = await StorageFile.GetFileFromPathAsync(path);
             IRandomAccessStream randomAccessStream = await storageFile.OpenReadAsync();
             BitmapDecoder decoder = await BitmapDecoder.CreateAsync(randomAccessStream);
-            SoftwareBitmap softwareBitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+            softwareBitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+
+
+
             Globalization.Language lang = new Globalization.Language(language);
             string space = language.Contains("zh") ? "" : " ";
             OCRJson result = new OCRJson();
-            List<Line> lines=new List<Line>();
+            List<Line> lines = new List<Line>();
             if (OcrEngine.IsLanguageSupported(lang))
             {
                 OcrEngine engine = OcrEngine.TryCreateFromLanguage(lang);
@@ -142,7 +185,7 @@ Example: Windows.Media.Ocr.Cli.exe -o c:\res.txt x.png
                     OcrResult ocrResult = await engine.RecognizeAsync(softwareBitmap);
                     result.TextAngle = ocrResult.TextAngle;
                     result.Text = ocrResult.Text;
-                 
+
                     foreach (var tempLine in ocrResult.Lines)
                     {
                         string line = "";
@@ -165,10 +208,10 @@ Example: Windows.Media.Ocr.Cli.exe -o c:\res.txt x.png
                         if (tempLine.Words.Count > 0)   // 防御：空行时 left/top 还是 MaxValue，不能直接用
                         {
                             rect = new Rect(left, top, right - left, bottom - top);
-             
+
                         }
 
-                        lines.Add(new Line(line,rect));
+                        lines.Add(new Line(line, rect));
                         result.PrettyText += line + Environment.NewLine;
                     }
                 }
@@ -176,7 +219,8 @@ Example: Windows.Media.Ocr.Cli.exe -o c:\res.txt x.png
             else
             {
                 throw new Exception(string.Format("Language {0} is not supported", language));
-            };
+            }
+            ;
             randomAccessStream.Dispose();
             softwareBitmap.Dispose();
             result.Lines = lines.ToArray();
@@ -185,7 +229,7 @@ Example: Windows.Media.Ocr.Cli.exe -o c:\res.txt x.png
             //{
             //    return result;
             //});
-            
+
         }
         static void WriteTextToFile(string text, string filePath)
         {
@@ -201,7 +245,16 @@ Example: Windows.Media.Ocr.Cli.exe -o c:\res.txt x.png
         }
         static void WriteTextToClipboard(string text)
         {
-            Clipboard.SetText(text);
+            //System.Threading.ThreadStateException:“Current thread must be set to single thread apartment (STA) mode before OLE calls can be made. Ensure that your Main function has STAThreadAttribute marked on it.”
+            //Clipboard.SetText(text);
+            Thread staThread = new Thread(() =>
+            {
+                Clipboard.SetText(text);
+            });
+            staThread.SetApartmentState(ApartmentState.STA); // 关键：设置为 STA
+            staThread.IsBackground = true; // 设为后台线程，避免阻止进程退出
+            staThread.Start();
+            staThread.Join(); // 等待操作完成...
         }
     }
 }

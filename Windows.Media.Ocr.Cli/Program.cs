@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -147,6 +148,26 @@ namespace Windows.Media.Ocr.Cli
                 {
                     imagePath = arg;
                 }
+
+                if (outputPath != "")
+                {
+                    WriteTextToFile(result, outputPath);
+                }
+                Console.WriteLine(hasRecognizedText ? result : "未识别到文字。");
+
+                if (enableNotification)
+                {
+                    ShowNotification("OCR 完成", BuildNotificationText(result, useClipboard, hasRecognizedText), ToolTipIcon.Info, notificationDurationMs);
+                }
+            }
+            catch (Exception e)
+            {
+                if (enableNotification)
+                {
+                    ShowNotification("OCR 失败", e.Message, ToolTipIcon.Error, notificationDurationMs);
+                }
+                var errorMessage = e.InnerException == null ? e.Message : e.Message + " " + e.InnerException.Message;
+                Console.WriteLine("ERROR: " + errorMessage);
             }
 
             string clipboardTempFile = null;
